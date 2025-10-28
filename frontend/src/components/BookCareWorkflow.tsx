@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Calendar, MapPin, Heart, Clock, Star, User, Baby, Shield, Search, Filter } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin, Heart, Clock, Star, User, Baby, Shield, Search, Filter, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -24,6 +24,18 @@ export function BookCareWorkflow() {
   const [paymentData, setPaymentData] = useState<any>(null);
   const [paymentError, setPaymentError] = useState<string>('');
   
+  // Step 3 fields
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [duration, setDuration] = useState('');
+  const [frequency, setFrequency] = useState('one-time');
+  const [serviceAddress, setServiceAddress] = useState('');
+  const [specialInstructions, setSpecialInstructions] = useState('');
+  const [babyAge, setBabyAge] = useState('');
+  const [urgency, setUrgency] = useState('');
+  const [specialNeeds, setSpecialNeeds] = useState('');
+  
   const heroHook = useScrollAnimation();
   const heroRef = (heroHook.elementRef as unknown) as React.RefObject<HTMLElement>;
 
@@ -41,6 +53,10 @@ export function BookCareWorkflow() {
     return selectedCaregiver !== '';
   };
 
+  const validateStep3 = () => {
+    return startDate && startTime && duration && serviceAddress !== '';
+  };
+
   const canProceedToNextStep = () => {
     switch (currentStep) {
       case 1:
@@ -48,9 +64,9 @@ export function BookCareWorkflow() {
       case 2:
         return validateStep2();
       case 3:
-        return true; // Step 3 doesn't have required fields for now
+        return validateStep3();
       case 4:
-        return true; // Payment step - can proceed after payment
+        return paymentCompleted; // Can only proceed if payment is completed
       default:
         return true;
     }
@@ -72,17 +88,95 @@ export function BookCareWorkflow() {
     }
   };
 
-  const handlePaymentSuccess = (data: any) => {
-    setPaymentData(data);
-    setPaymentCompleted(true);
-    setPaymentError('');
-    // Go to confirmation step
-    setTimeout(() => {
-      setCurrentStep(5);
-    }, 1000);
+  const handlePaymentSuccess = async (data: any) => {
+    try {
+      console.log('handlePaymentSuccess called with data:', data);
+      
+      // Save booking to database
+      const token = localStorage.getItem('neonest_token');
+      console.log('Token exists:', !!token);
+      
+      if (!token) {
+        throw new Error('Please sign in to complete your booking');
+      }
+      
+      const bookingPayload = {
+        city: selectedCity,
+        services: selectedServices,
+        selectedCaregiver: selectedCaregiver,
+        startDate: new Date(startDate),
+        endDate: endDate ? new Date(endDate) : undefined,
+        startTime: startTime,
+        duration: duration,
+        frequency: frequency,
+        serviceAddress: serviceAddress,
+        specialInstructions: specialInstructions,
+        babyAge: babyAge || undefined,
+        urgency: urgency || undefined,
+        specialNeeds: specialNeeds || undefined,
+        amount: 1540,
+        paymentStatus: 'completed',
+        paymentMethod: data.method,
+        transactionId: data.transactionId || data.orderId,
+      };
+      
+      console.log('Booking payload:', bookingPayload);
+      
+      const response = await fetch('http://localhost:5000/api/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(bookingPayload),
+      });
+
+      console.log('Response status:', response.status);
+      const responseData = await response.json();
+      console.log('Response data:', responseData);
+
+      if (!response.ok) {
+        throw new Error(responseData.message || 'Failed to save booking');
+      }
+
+      setPaymentData(data);
+      setPaymentCompleted(true);
+      setPaymentError('');
+      
+      // Go to confirmation step
+      setTimeout(() => {
+        setCurrentStep(5);
+      }, 1000);
+    } catch (error: any) {
+      console.error('Error saving booking:', error);
+      setPaymentError(error.message || 'Failed to save booking. Please check console for details.');
+      setPaymentCompleted(false);
+    }
   };
 
-  const handlePaymentError = (error: string) => {
+  // Test payment option (for development)
+  const [isProcessingTest, setIsProcessingTest] = useState(false);
+  
+  const handleTestPayment = async () => {
+    setIsProcessingTest(true);
+    setPaymentError('');
+    
+    try {
+      console.log('Starting test payment...');
+      await handlePaymentSuccess({
+        method: 'test',
+        transactionId: `TEST_${Date.now()}`,
+      });
+      console.log('Test payment completed successfully');
+    } catch (error: any) {
+      console.error('Test payment error:', error);
+      setPaymentError(error.message || 'Test payment failed. Please check console for details.');
+    } finally {
+      setIsProcessingTest(false);
+    }
+  };
+
+  const onPaymentError = (error: string) => {
     setPaymentError(error);
     setPaymentCompleted(false);
   };
@@ -344,7 +438,7 @@ export function BookCareWorkflow() {
             <div className="grid md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="babyAge">Baby's Age</Label>
-                <Select>
+                <Select value={babyAge} onValueChange={setBabyAge}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select age" />
                   </SelectTrigger>
@@ -359,7 +453,7 @@ export function BookCareWorkflow() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="urgency">When do you need care?</Label>
-                <Select>
+                <Select value={urgency} onValueChange={setUrgency}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select timeframe" />
                   </SelectTrigger>
@@ -379,6 +473,8 @@ export function BookCareWorkflow() {
               <Label htmlFor="special-needs">Special Requirements or Preferences</Label>
               <Textarea 
                 id="special-needs" 
+                value={specialNeeds}
+                onChange={(e) => setSpecialNeeds(e.target.value)}
                 placeholder="Any specific needs, allergies, preferences, or instructions for the caregiver..."
                 rows={3}
               />
@@ -548,18 +644,18 @@ export function BookCareWorkflow() {
             <div className="grid md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="startDate">Start Date *</Label>
-                <Input id="startDate" type="date" />
+                <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="endDate">End Date (if ongoing care)</Label>
-                <Input id="endDate" type="date" />
+                <Input id="endDate" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="startTime">Start Time *</Label>
-                <Select>
+                <Select value={startTime} onValueChange={setStartTime}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select time" />
                   </SelectTrigger>
@@ -574,7 +670,7 @@ export function BookCareWorkflow() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="duration">Duration *</Label>
-                <Select>
+                <Select value={duration} onValueChange={setDuration}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select duration" />
                   </SelectTrigger>
@@ -592,7 +688,7 @@ export function BookCareWorkflow() {
 
             <div className="space-y-2">
               <Label>Frequency</Label>
-              <RadioGroup defaultValue="one-time" className="grid grid-cols-2 gap-4">
+              <RadioGroup value={frequency} onValueChange={setFrequency} className="grid grid-cols-2 gap-4">
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="one-time" id="one-time" />
                   <Label htmlFor="one-time">One-time service</Label>
@@ -616,6 +712,8 @@ export function BookCareWorkflow() {
               <Label htmlFor="address">Service Address *</Label>
               <Textarea 
                 id="address" 
+                value={serviceAddress}
+                onChange={(e) => setServiceAddress(e.target.value)}
                 placeholder="Enter complete address where care will be provided"
                 rows={3}
               />
@@ -625,6 +723,8 @@ export function BookCareWorkflow() {
               <Label htmlFor="instructions">Special Instructions</Label>
               <Textarea 
                 id="instructions" 
+                value={specialInstructions}
+                onChange={(e) => setSpecialInstructions(e.target.value)}
                 placeholder="Any specific instructions, preferences, or important information for the caregiver..."
                 rows={3}
               />
@@ -709,8 +809,33 @@ export function BookCareWorkflow() {
             <PaymentForm
               amount={1540}
               onPaymentSuccess={handlePaymentSuccess}
-              onPaymentError={handlePaymentError}
+              onPaymentError={onPaymentError}
             />
+
+            {/* Test Payment Button (for development) */}
+            <div className="border-t pt-4 mt-4">
+              <p className="text-sm text-muted-foreground mb-2 text-center">
+                Testing the flow? Use this to skip payment:
+              </p>
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={handleTestPayment}
+                disabled={isProcessingTest}
+              >
+                {isProcessingTest ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processing Test Payment...
+                  </>
+                ) : (
+                  'Complete Test Payment'
+                )}
+              </Button>
+              <p className="text-xs text-center text-muted-foreground mt-2">
+                This will save your booking without actual payment
+              </p>
+            </div>
           </div>
         );
 
@@ -931,12 +1056,16 @@ export function BookCareWorkflow() {
                   {currentStep === 1 && !selectedCity && <li>• Please select your city</li>}
                   {currentStep === 1 && selectedServices.length === 0 && <li>• Please select at least one service</li>}
                   {currentStep === 2 && !selectedCaregiver && <li>• Please select a caregiver</li>}
+                  {currentStep === 3 && !startDate && <li>• Please select a start date</li>}
+                  {currentStep === 3 && !startTime && <li>• Please select a start time</li>}
+                  {currentStep === 3 && !duration && <li>• Please select duration</li>}
+                  {currentStep === 3 && !serviceAddress && <li>• Please enter the service address</li>}
                 </ul>
               </div>
             )}
             
             {/* Navigation Buttons */}
-            {currentStep < 5 && (
+            {currentStep < 5 && currentStep !== 4 && (
               <div className="flex justify-between mt-8 pt-6 border-t border-border">
                 <Button 
                   variant="outline" 
@@ -950,8 +1079,21 @@ export function BookCareWorkflow() {
                   onClick={handleNextStep}
                   disabled={!canProceedToNextStep()}
                 >
-                  {currentStep === 3 ? 'Proceed to Payment' : currentStep === 4 ? 'Complete Payment' : 'Continue'}
+                  {currentStep === 3 ? 'Proceed to Payment' : 'Continue'}
                   <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            )}
+            
+            {/* Step 4 Back Button Only */}
+            {currentStep === 4 && !paymentCompleted && (
+              <div className="mt-8 pt-6 border-t border-border">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setCurrentStep(3)}
+                  className="w-full"
+                >
+                  ← Go Back to Edit Details
                 </Button>
               </div>
             )}
