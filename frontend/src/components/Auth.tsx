@@ -110,7 +110,13 @@ export function Auth({ onNavigate }: AuthProps) {
     }
 
     try {
-      await sendOTP(signupEmail);
+      const result = await sendOTP(signupEmail);
+      if (result && result.existingUser) {
+        setActiveTab('login');
+        setLoginEmail(signupEmail);
+        toast.error('This email already exists. Try signing in.');
+        return;
+      }
       setShowOTPInput(true);
       toast.success('OTP sent! Please check your email.');
     } catch (err: any) {
@@ -164,7 +170,10 @@ export function Auth({ onNavigate }: AuthProps) {
       
       toast.success('Account created successfully!');
       
-      if (onNavigate) onNavigate('book-care');
+      if (onNavigate) {
+        if (userType === 'caregiver') onNavigate('caregiver-signup');
+        else onNavigate('book-care');
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
     } finally {

@@ -18,6 +18,12 @@ export const sendOTP = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Invalid email' });
     }
 
+    // If a user already exists with this email, do not send OTP
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ isExistingUser: true, message: 'Account already exists. Please sign in.' });
+    }
+
     // Generate OTP
     const otp = generateOTP();
 
@@ -93,6 +99,25 @@ export const register = async (req: Request, res: Response) => {
 
     await user.save();
     await OTP.deleteMany({ email }); // Clean up used OTPs
+
+    // If registering as caregiver, create caretaker profile document
+    if ((role || 'user') === 'caregiver') {
+      try {
+        const { Caretaker } = await import('../models/Caretaker');
+        await Caretaker.create({
+          userId: user._id,
+          email: user.email,
+          fname: user.fname,
+          lname: user.lname,
+          phone: user.get('phone') || undefined,
+          profileCompleted: false,
+          status: 'pending',
+        });
+      } catch (e) {
+        console.error('Failed to create caretaker profile', e);
+        // Do not fail user registration if caretaker profile creation fails
+      }
+    }
 
     // Generate token
     const token = jwt.sign(

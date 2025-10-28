@@ -1,3 +1,4 @@
+import React from 'react';
 import { ArrowRight, PlayCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -11,8 +12,10 @@ interface HeroProps {
 }
 
 export function Hero({ onNavigate }: HeroProps) {
-  const { elementRef: contentRef } = useScrollAnimation({ animationClass: 'animate-slideInLeft' });
-  const { elementRef: imageRef } = useScrollAnimation({ animationClass: 'animate-slideInRight', delay: 300 });
+  const contentHook = useScrollAnimation({ animationClass: 'animate-slideInLeft' });
+  const imageHook = useScrollAnimation({ animationClass: 'animate-slideInRight', delay: 300 });
+  const contentRef = (contentHook.elementRef as unknown) as React.RefObject<HTMLDivElement>;
+  const imageRef = (imageHook.elementRef as unknown) as React.RefObject<HTMLDivElement>;
   const { isAuthenticated } = useAuth();
 
   const handleBookCareClick = () => {

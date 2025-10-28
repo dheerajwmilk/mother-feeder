@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Moon, Sun, Menu, X, Heart, User, BookOpen, MessageCircle, UserPlus, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Moon, Sun, Menu, X, Heart, User, BookOpen, MessageCircle, UserPlus, Calendar, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { Button } from './ui/button';
 import { useAuth } from '../contexts/AuthContext';
+import { Badge } from './ui/badge';
 
 type AppView = 'home' | 'auth' | 'blog' | 'knowledge' | 'caregiver-signup' | 'book-care' | 'faq' | 'legal';
 
@@ -15,6 +16,32 @@ export function Header({ onNavigate, currentView }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { isAuthenticated } = useAuth();
+  const [applicationStatus, setApplicationStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+
+  // Check caregiver application status
+  useEffect(() => {
+    const checkStatus = async () => {
+      if (!isAuthenticated) {
+        setApplicationStatus(null);
+        return;
+      }
+      try {
+        const token = localStorage.getItem('neonest_token');
+        const res = await fetch('http://localhost:5000/api/caretaker/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok && data?.profile?.profileCompleted) {
+          setApplicationStatus(data.profile.status || 'pending');
+        } else {
+          setApplicationStatus(null);
+        }
+      } catch (error) {
+        setApplicationStatus(null);
+      }
+    };
+    checkStatus();
+  }, [isAuthenticated]);
 
   const handleBookCareClick = () => {
     if (isAuthenticated) {
@@ -140,15 +167,38 @@ export function Header({ onNavigate, currentView }: HeaderProps) {
               Book Care Now
             </Button>
 
-            <Button 
-              variant="secondary"
-              className="hidden md:inline-flex"
-              size="sm"
-              onClick={() => onNavigate('caregiver-signup')}
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Join as Caregiver
-            </Button>
+            {applicationStatus ? (
+              <div className="hidden md:inline-flex">
+                {applicationStatus === 'approved' && (
+                  <Button variant="default" size="sm">
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Approved
+                  </Button>
+                )}
+                {applicationStatus === 'pending' && (
+                  <Button variant="secondary" size="sm">
+                    <Clock className="w-4 h-4 mr-2" />
+                    Under Review
+                  </Button>
+                )}
+                {applicationStatus === 'rejected' && (
+                  <Button variant="destructive" size="sm">
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Rejected
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Button 
+                variant="secondary"
+                className="hidden md:inline-flex"
+                size="sm"
+                onClick={() => onNavigate('caregiver-signup')}
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Join as Caregiver
+              </Button>
+            )}
 
             {/* Mobile menu button */}
             <Button
@@ -194,17 +244,34 @@ export function Header({ onNavigate, currentView }: HeaderProps) {
                     <Calendar className="w-4 h-4 mr-2" />
                     Book Care Now
                   </Button>
-                  <Button 
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => {
-                      onNavigate('caregiver-signup');
-                      setIsMenuOpen(false);
-                    }}
-                  >
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Join as Caregiver
-                  </Button>
+                  {applicationStatus ? (
+                    <div className={`w-full px-4 py-3 rounded-lg border-2 flex items-center justify-center gap-2 ${
+                      applicationStatus === 'approved' ? 'bg-green-50 border-green-500 text-green-700' :
+                      applicationStatus === 'pending' ? 'bg-yellow-50 border-yellow-500 text-yellow-700' :
+                      'bg-red-50 border-red-500 text-red-700'
+                    }`}>
+                      {applicationStatus === 'approved' && <CheckCircle className="w-4 h-4" />}
+                      {applicationStatus === 'pending' && <Clock className="w-4 h-4" />}
+                      {applicationStatus === 'rejected' && <XCircle className="w-4 h-4" />}
+                      <span className="font-medium">
+                        {applicationStatus === 'approved' && 'Application Approved'}
+                        {applicationStatus === 'pending' && 'Application Under Review'}
+                        {applicationStatus === 'rejected' && 'Application Rejected'}
+                      </span>
+                    </div>
+                  ) : (
+                    <Button 
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => {
+                        onNavigate('caregiver-signup');
+                        setIsMenuOpen(false);
+                      }}
+                    >
+                      <UserPlus className="w-4 h-4 mr-2" />
+                      Join as Caregiver
+                    </Button>
+                  )}
                   { !isAuthenticated && (
                     <Button
                       variant="outline"
@@ -255,17 +322,34 @@ export function Header({ onNavigate, currentView }: HeaderProps) {
                     <Calendar className="w-4 h-4 mr-2" />
                     Book Care Now
                   </Button>
-                  <Button 
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => {
-                      onNavigate('caregiver-signup');
-                      setIsMenuOpen(false);
-                    }}
-                  >
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Join as Caregiver
-                  </Button>
+                  {applicationStatus ? (
+                    <div className={`w-full px-4 py-3 rounded-lg border-2 flex items-center justify-center gap-2 ${
+                      applicationStatus === 'approved' ? 'bg-green-50 border-green-500 text-green-700' :
+                      applicationStatus === 'pending' ? 'bg-yellow-50 border-yellow-500 text-yellow-700' :
+                      'bg-red-50 border-red-500 text-red-700'
+                    }`}>
+                      {applicationStatus === 'approved' && <CheckCircle className="w-4 h-4" />}
+                      {applicationStatus === 'pending' && <Clock className="w-4 h-4" />}
+                      {applicationStatus === 'rejected' && <XCircle className="w-4 h-4" />}
+                      <span className="font-medium">
+                        {applicationStatus === 'approved' && 'Application Approved'}
+                        {applicationStatus === 'pending' && 'Application Under Review'}
+                        {applicationStatus === 'rejected' && 'Application Rejected'}
+                      </span>
+                    </div>
+                  ) : (
+                    <Button 
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => {
+                        onNavigate('caregiver-signup');
+                        setIsMenuOpen(false);
+                      }}
+                    >
+                      <UserPlus className="w-4 h-4 mr-2" />
+                      Join as Caregiver
+                    </Button>
+                  )}
                   {currentView !== 'auth' && !isAuthenticated && (
                     <Button
                       variant="outline"

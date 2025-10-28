@@ -14,7 +14,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fname: string, lname: string, phone: string | undefined, otp: string, role?: string) => Promise<void>;
-  sendOTP: (email: string) => Promise<void>;
+  sendOTP: (email: string) => Promise<{ existingUser: boolean }>;
   sendResetOTP: (email: string) => Promise<any>;
   resetPassword: (email: string, otp: string, newPassword: string) => Promise<any>;
   logout: () => void;
@@ -70,7 +70,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string) => {
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -97,9 +97,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const sendOTP = async (email: string) => {
+  const sendOTP = async (email: string): Promise<{ existingUser: boolean }> => {
     try {
-      const res = await fetch(`${API_URL}/auth/send-otp`, {
+      const res = await fetch(`${API_URL}/api/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -107,10 +107,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 409 && data.isExistingUser) {
+          toast.error('This email is already registered. Please sign in.');
+          return { existingUser: true };
+        }
         throw new Error(data.message || 'Failed to send OTP');
       }
       
       toast.success('OTP sent successfully');
+      return { existingUser: false };
     } catch (error: any) {
       toast.error(error.message || 'Error sending OTP');
       throw error;
@@ -119,7 +124,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const sendResetOTP = async (email: string) => {
     try {
-      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+      const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -138,7 +143,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const resetPassword = async (email: string, otp: string, newPassword: string) => {
     try {
-      const res = await fetch(`${API_URL}/auth/reset-password`, {
+      const res = await fetch(`${API_URL}/api/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp, newPassword }),
@@ -157,7 +162,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (email: string, password: string, fname: string, lname: string, phone: string | undefined, otp: string, role: string = 'user') => {
     try {
-      const res = await fetch(`${API_URL}/auth/register`, {
+      const res = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, fname, lname, phone, otp, role }),

@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 import morgan from 'morgan';
 import authRoutes from './routes/authRoutes';
+import caretakerRoutes from './routes/caretakerRoutes';
+// import infoRoutes from './routes/infoRoutes'
 import corsOptions from './config/cors';
 
 // Create Express app
@@ -32,6 +34,8 @@ app.get('/', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/caretaker', caretakerRoutes);
+// app.use('/v1/info/', infoRoutes);  
 
 import { errorHandler } from './middleware/errorHandler';
 

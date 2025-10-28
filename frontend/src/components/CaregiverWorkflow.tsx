@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ArrowRight, CheckCircle, Upload, Calendar, MapPin, Heart, Shield, Star, Clock, User, Phone, Mail, FileText, Award, GraduationCap, Users, BookOpen, PlayCircle, Target } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, CheckCircle, Upload, MapPin, Heart, Shield, Star, Clock, Award, GraduationCap, Users, BookOpen, PlayCircle, Target, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,42 +8,200 @@ import { Textarea } from './ui/textarea';
 import { Checkbox } from './ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
-import { Progress } from './ui/progress';
 import { useScrollAnimation } from './hooks/useScrollAnimation';
-import { ImageWithFallback } from './figma/ImageWithFallback';
 
-export function CaregiverWorkflow() {
+type AppView = 'home' | 'auth' | 'blog' | 'knowledge' | 'caregiver-signup' | 'book-care' | 'faq' | 'legal';
+
+interface CaregiverWorkflowProps {
+  onNavigate?: (view: AppView) => void;
+}
+
+export function CaregiverWorkflow({ onNavigate }: CaregiverWorkflowProps) {
   const [currentStep, setCurrentStep] = useState(0); // Start with step 0 for experience assessment
-  const [formData, setFormData] = useState({});
   const [selectedCity, setSelectedCity] = useState('');
-  const [isZeroExperience, setIsZeroExperience] = useState(false);
+  const [isZeroExperience, setIsZeroExperience] = useState<boolean | null>(null);
   const [showTrainingPath, setShowTrainingPath] = useState(false);
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [availabilityDays, setAvailabilityDays] = useState<Record<string, boolean>>({ Mon: false, Tue: false, Wed: false, Thu: false, Fri: false, Sat: false, Sun: false });
+  const [startTime, setStartTime] = useState<string>('');    
+  const [endTime, setEndTime] = useState<string>('');
+  const [hourlyRate, setHourlyRate] = useState<string>('');
+  const [experienceLevel, setExperienceLevel] = useState<string>('');
+  const [about, setAbout] = useState<string>('');
+  const [languages, setLanguages] = useState<string>('');
+  const [education, setEducation] = useState<string>('');
+  const [docUploads, setDocUploads] = useState<Record<string, { url?: string; uploading: boolean; error?: string }>>({
+    government_id: { uploading: false },
+    address_proof: { uploading: false },
+    medical_certificate: { uploading: false },
+    experience_certificate: { uploading: false },
+  });
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [applicationStatus, setApplicationStatus] = useState<'pending' | 'approved' | 'rejected' | 'none'>('none');
+  const [statusLoading, setStatusLoading] = useState(false);
   
-  const { elementRef: heroRef } = useScrollAnimation();
-  const { elementRef: benefitsRef } = useScrollAnimation();
+  const heroHook = useScrollAnimation();
+  const benefitsHook = useScrollAnimation();
+  const heroRef = (heroHook.elementRef as unknown) as React.RefObject<HTMLDivElement>;
+  const benefitsRef = (benefitsHook.elementRef as unknown) as React.RefObject<HTMLDivElement>;
+
+  // Reusable upload dropzone
+  const UploadDropzone: React.FC<{
+    docKey: 'government_id' | 'address_proof' | 'medical_certificate' | 'experience_certificate';
+    placeholder: string;
+    typeField: string;
+    inputId: string;
+  }> = ({ docKey, placeholder, typeField, inputId }) => {
+    const inputRef = React.useRef<HTMLInputElement | null>(null);
+
+    const startUpload = async (file: File) => {
+      setDocUploads((s) => ({ ...s, [docKey]: { uploading: true } } as any));
+      try {
+        const token = localStorage.getItem('neonest_token');
+        const form = new FormData();
+        form.append('file', file);
+        form.append('type', typeField);
+        const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+          method: 'POST',
+          headers: { Authorization: token ? `Bearer ${token}` : '' },
+          body: form,
+        });
+        const data = await res.json();
+        if (res.ok && data?.url) setDocUploads((s) => ({ ...s, [docKey]: { uploading: false, url: data.url } } as any));
+        else setDocUploads((s) => ({ ...s, [docKey]: { uploading: false, error: data?.message || 'Upload failed' } } as any));
+      } catch (err: any) {
+        setDocUploads((s) => ({ ...s, [docKey]: { uploading: false, error: err?.message || 'Upload error' } } as any));
+      }
+    };
+
+    const onDrop = async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      await startUpload(file);
+    };
+
+    const onBrowseChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      await startUpload(file);
+      // reset input so same file can be selected again if needed
+      e.currentTarget.value = '';
+    };
+
+    const state = docUploads[docKey];
+
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click();
+        }}
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDrop={onDrop}
+        className="mt-2 border-2 border-dashed rounded-lg p-4 text-sm text-muted-foreground cursor-pointer hover:border-primary"
+      >
+        {state?.uploading ? 'Uploading...' : state?.error ? `Upload failed: ${state.error}` : (state?.url ? 'Uploaded ✓' : placeholder)}
+        <input
+          id={inputId}
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onBrowseChange}
+        />
+      </div>
+    );
+  };
 
   // Scroll to top when step changes
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
   }, [currentStep]);
 
+  // Fetch caretaker application status
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        setStatusLoading(true);
+        const token = localStorage.getItem('neonest_token');
+        if (!token) { setApplicationStatus('none'); return; }
+        const res = await fetch('http://localhost:5000/api/caretaker/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok && data?.profile) {
+          if (data.profile.profileCompleted) {
+            setApplicationStatus((data.profile.status as any) || 'pending');
+          } else {
+            setApplicationStatus('none');
+          }
+        } else {
+          setApplicationStatus('none');
+        }
+      } catch {
+        setApplicationStatus('none');
+      } finally {
+        setStatusLoading(false);
+      }
+    };
+    fetchStatus();
+  }, []);
+
+  // Validation functions for each step
+  const validateStep = (step: number): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+    
+    if (step === 0) {
+      // Step 0: Experience Assessment - User must answer Yes or No
+      if (isZeroExperience === null) errors.push('Please answer the experience question');
+    } else if (step === 1) {
+      // Step 1: Personal Information - No required fields (all optional)
+      // This step just collects optional personal information
+    } else if (step === 2) {
+      // Step 2: Experience & Skills
+      if (!selectedCity) errors.push('City selection is required');
+      if (!experienceLevel) errors.push('Years of childcare experience is required');
+      if (selectedServices.length === 0) errors.push('Select at least one service to offer');
+      if (!about || about.trim() === '') errors.push('"Why do you want to be a caregiver?" is required');
+    } else if (step === 3) {
+      // Step 3: Verification Documents
+      if (!docUploads.government_id?.url) errors.push('Government ID is required');
+      if (!docUploads.address_proof?.url) errors.push('Address proof is required');
+    } else if (step === 4) {
+      // Step 4: Availability & Rates
+      const daysSelected = Object.values(availabilityDays).some(day => day);
+      if (!daysSelected) errors.push('Select at least one availability day');
+      if (!startTime) errors.push('Start time is required');
+      if (!endTime) errors.push('End time is required');
+      if (!hourlyRate || parseFloat(hourlyRate) <= 0) errors.push('Valid hourly rate is required');
+    } else if (step === 5) {
+      // Step 5: Background Check - This is just informational, no validation needed
+    }
+    
+    return { isValid: errors.length === 0, errors };
+  };
+
   const regularSteps = [
     { id: 0, title: 'Experience Assessment', icon: BookOpen },
-    { id: 1, title: 'Personal Information', icon: User },
+    { id: 1, title: 'Personal Information', icon: Users },
     { id: 2, title: 'Experience & Skills', icon: Award },
     { id: 3, title: 'Verification Documents', icon: Shield },
-    { id: 4, title: 'Availability & Rates', icon: Calendar },
+    { id: 4, title: 'Availability & Rates', icon: Clock },
     { id: 5, title: 'Background Check', icon: CheckCircle },
   ];
 
   const trainingSteps = [
     { id: 0, title: 'Experience Assessment', icon: BookOpen },
-    { id: 1, title: 'Personal Information', icon: User },
+    { id: 1, title: 'Personal Information', icon: Users },
     { id: 2, title: 'Training Program Enrollment', icon: GraduationCap },
     { id: 3, title: 'Free Training Modules', icon: Star },
     { id: 4, title: 'Skills Certification', icon: Award },
     { id: 5, title: 'Verification Documents', icon: Shield },
-    { id: 6, title: 'Availability & Rates', icon: Calendar },
+    { id: 6, title: 'Availability & Rates', icon: Clock },
     { id: 7, title: 'Background Check', icon: CheckCircle },
   ];
 
@@ -285,7 +443,7 @@ export function CaregiverWorkflow() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="education">Education Level</Label>
-                <Select>
+                <Select onValueChange={setEducation}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select education" />
                   </SelectTrigger>
@@ -300,7 +458,7 @@ export function CaregiverWorkflow() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="languages">Languages Spoken</Label>
-                <Input id="languages" placeholder="Hindi, English, etc." />
+                <Input id="languages" placeholder="Hindi, English, etc." value={languages} onChange={(e) => setLanguages(e.target.value)} />
               </div>
             </div>
           </div>
@@ -441,8 +599,24 @@ export function CaregiverWorkflow() {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="city">Select Your City *</Label>
+                <Select value={selectedCity} onValueChange={setSelectedCity}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select your city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cities.map((city) => (
+                      <SelectItem key={city.id} value={city.id}>
+                        {city.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="experience">Years of Childcare Experience *</Label>
-                <Select>
+                <Select value={experienceLevel} onValueChange={setExperienceLevel}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select experience" />
                   </SelectTrigger>
@@ -461,7 +635,12 @@ export function CaregiverWorkflow() {
                 <div className="grid md:grid-cols-2 gap-4">
                   {services.map((service) => (
                     <div key={service.name} className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-muted/50">
-                      <Checkbox id={service.name} />
+                      <Checkbox id={service.name} checked={selectedServices.includes(service.name)} onCheckedChange={(c) => {
+                        const checked = Boolean(c);
+                        setSelectedServices((prev) =>
+                          checked ? Array.from(new Set([...prev, service.name])) : prev.filter((s) => s !== service.name)
+                        );
+                      }} />
                       <div className="flex-1">
                         <Label htmlFor={service.name} className="font-medium cursor-pointer">{service.name}</Label>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -487,6 +666,8 @@ export function CaregiverWorkflow() {
                 <Textarea 
                   id="why-caregiver" 
                   placeholder="Tell us about your motivation and passion for childcare"
+                  value={about}
+                  onChange={(e) => setAbout(e.target.value)}
                 />
               </div>
             </div>
@@ -601,38 +782,239 @@ export function CaregiverWorkflow() {
 
               <div className="grid md:grid-cols-2 gap-6">
                 <Card className="border-dashed border-2 hover:border-primary/50 transition-colors">
-                  <CardContent className="p-6 text-center">
-                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <CardContent
+                    className="p-6 text-center"
+                  >
+                    <Upload
+                      className="w-12 h-12 text-muted-foreground mx-auto mb-4 cursor-pointer"
+                      onClick={() => document.getElementById('file-government_id')?.click()}
+                    />
                     <h3 className="font-semibold mb-2">Government ID Proof *</h3>
                     <p className="text-sm text-muted-foreground mb-4">Aadhaar Card, Passport, or Driver's License</p>
-                    <Button variant="outline">Upload Document</Button>
+                    <div
+                      onClick={() => document.getElementById('file-government_id')?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files?.[0];
+                        if (!file) return;
+                        setDocUploads((s) => ({ ...s, government_id: { uploading: true } }));
+                        try {
+                          const token = localStorage.getItem('neonest_token');
+                          const form = new FormData();
+                          form.append('file', file);
+                          form.append('type', 'government_id');
+                          const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                            method: 'POST',
+                            headers: { Authorization: token ? `Bearer ${token}` : '' },
+                            body: form,
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.url) setDocUploads((s) => ({ ...s, government_id: { uploading: false, url: data.url } }));
+                          else setDocUploads((s) => ({ ...s, government_id: { uploading: false, error: data?.message || 'Upload failed' } }));
+                        } catch (err: any) {
+                          setDocUploads((s) => ({ ...s, government_id: { uploading: false, error: err?.message || 'Upload error' } }));
+                        }
+                      }}
+                      className="mt-2 border-2 border-dashed rounded-lg p-4 text-sm text-muted-foreground cursor-pointer hover:border-primary"
+                    >
+                      {docUploads.government_id.uploading ? 'Uploading...' : (docUploads.government_id.url ? 'Uploaded ✓' : 'Drag & drop here, or click to browse')}
+                    </div>
+                    <input id="file-government_id" type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setDocUploads((s) => ({ ...s, government_id: { uploading: true } }));
+                      try {
+                        const token = localStorage.getItem('neonest_token');
+                        const form = new FormData();
+                        form.append('file', file);
+                        form.append('type', 'government_id');
+                        const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                          method: 'POST',
+                          headers: { Authorization: token ? `Bearer ${token}` : '' },
+                          body: form,
+                        });
+                        const data = await res.json();
+                        if (res.ok && data?.url) setDocUploads((s) => ({ ...s, government_id: { uploading: false, url: data.url } }));
+                        else setDocUploads((s) => ({ ...s, government_id: { uploading: false, error: data?.message || 'Upload failed' } }));
+                      } catch (err: any) {
+                        setDocUploads((s) => ({ ...s, government_id: { uploading: false, error: err?.message || 'Upload error' } }));
+                      }
+                    }} />
                   </CardContent>
                 </Card>
 
                 <Card className="border-dashed border-2 hover:border-primary/50 transition-colors">
                   <CardContent className="p-6 text-center">
-                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4 cursor-pointer" onClick={() => document.getElementById('file-address_proof')?.click()} />
                     <h3 className="font-semibold mb-2">Address Proof *</h3>
                     <p className="text-sm text-muted-foreground mb-4">Utility Bill, Bank Statement, or Rental Agreement</p>
-                    <Button variant="outline">Upload Document</Button>
+                    <div
+                      onClick={() => document.getElementById('file-address_proof')?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files?.[0];
+                        if (!file) return;
+                        setDocUploads((s) => ({ ...s, address_proof: { uploading: true } }));
+                        try {
+                          const token = localStorage.getItem('neonest_token');
+                          const form = new FormData();
+                          form.append('file', file);
+                          form.append('type', 'address_proof');
+                          const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                            method: 'POST',
+                            headers: { Authorization: token ? `Bearer ${token}` : '' },
+                            body: form,
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.url) setDocUploads((s) => ({ ...s, address_proof: { uploading: false, url: data.url } }));
+                          else setDocUploads((s) => ({ ...s, address_proof: { uploading: false, error: data?.message || 'Upload failed' } }));
+                        } catch (err: any) {
+                          setDocUploads((s) => ({ ...s, address_proof: { uploading: false, error: err?.message || 'Upload error' } }));
+                        }
+                      }}
+                      className="mt-2 border-2 border-dashed rounded-lg p-4 text-sm text-muted-foreground cursor-pointer hover:border-primary"
+                    >
+                      {docUploads.address_proof.uploading ? 'Uploading...' : (docUploads.address_proof.url ? 'Uploaded ✓' : 'Drag & drop here, or click to browse')}
+                    </div>
+                    <input id="file-address_proof" type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setDocUploads((s) => ({ ...s, address_proof: { uploading: true } }));
+                      try {
+                        const token = localStorage.getItem('neonest_token');
+                        const form = new FormData();
+                        form.append('file', file);
+                        form.append('type', 'address_proof');
+                        const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                          method: 'POST',
+                          headers: { Authorization: token ? `Bearer ${token}` : '' },
+                          body: form,
+                        });
+                        const data = await res.json();
+                        if (res.ok && data?.url) setDocUploads((s) => ({ ...s, address_proof: { uploading: false, url: data.url } }));
+                        else setDocUploads((s) => ({ ...s, address_proof: { uploading: false, error: data?.message || 'Upload failed' } }));
+                      } catch (err: any) {
+                        setDocUploads((s) => ({ ...s, address_proof: { uploading: false, error: err?.message || 'Upload error' } }));
+                      }
+                    }} />
                   </CardContent>
                 </Card>
 
                 <Card className="border-dashed border-2 hover:border-primary/50 transition-colors">
                   <CardContent className="p-6 text-center">
-                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4 cursor-pointer" onClick={() => document.getElementById('file-medical_certificate')?.click()} />
                     <h3 className="font-semibold mb-2">Medical Certificate</h3>
                     <p className="text-sm text-muted-foreground mb-4">Health check-up report (within 6 months)</p>
-                    <Button variant="outline">Upload Document</Button>
+                    <div
+                      onClick={() => document.getElementById('file-medical_certificate')?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files?.[0];
+                        if (!file) return;
+                        setDocUploads((s) => ({ ...s, medical_certificate: { uploading: true } }));
+                        try {
+                          const token = localStorage.getItem('neonest_token');
+                          const form = new FormData();
+                          form.append('file', file);
+                          form.append('type', 'medical_certificate');
+                          const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                            method: 'POST',
+                            headers: { Authorization: token ? `Bearer ${token}` : '' },
+                            body: form,
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.url) setDocUploads((s) => ({ ...s, medical_certificate: { uploading: false, url: data.url } }));
+                          else setDocUploads((s) => ({ ...s, medical_certificate: { uploading: false, error: data?.message || 'Upload failed' } }));
+                        } catch (err: any) {
+                          setDocUploads((s) => ({ ...s, medical_certificate: { uploading: false, error: err?.message || 'Upload error' } }));
+                        }
+                      }}
+                      className="mt-2 border-2 border-dashed rounded-lg p-4 text-sm text-muted-foreground cursor-pointer hover:border-primary"
+                    >
+                      {docUploads.medical_certificate.uploading ? 'Uploading...' : (docUploads.medical_certificate.url ? 'Uploaded ✓' : 'Drag & drop here, or click to browse')}
+                    </div>
+                    <input id="file-medical_certificate" type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setDocUploads((s) => ({ ...s, medical_certificate: { uploading: true } }));
+                      try {
+                        const token = localStorage.getItem('neonest_token');
+                        const form = new FormData();
+                        form.append('file', file);
+                        form.append('type', 'medical_certificate');
+                        const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                          method: 'POST',
+                          headers: { Authorization: token ? `Bearer ${token}` : '' },
+                          body: form,
+                        });
+                        const data = await res.json();
+                        if (res.ok && data?.url) setDocUploads((s) => ({ ...s, medical_certificate: { uploading: false, url: data.url } }));
+                        else setDocUploads((s) => ({ ...s, medical_certificate: { uploading: false, error: data?.message || 'Upload failed' } }));
+                      } catch (err: any) {
+                        setDocUploads((s) => ({ ...s, medical_certificate: { uploading: false, error: err?.message || 'Upload error' } }));
+                      }
+                    }} />
                   </CardContent>
                 </Card>
 
                 <Card className="border-dashed border-2 hover:border-primary/50 transition-colors">
                   <CardContent className="p-6 text-center">
-                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4 cursor-pointer" onClick={() => document.getElementById('file-experience_certificate')?.click()} />
                     <h3 className="font-semibold mb-2">Experience Certificates</h3>
                     <p className="text-sm text-muted-foreground mb-4">Previous work experience letters or references</p>
-                    <Button variant="outline">Upload Document</Button>
+                    <div
+                      onClick={() => document.getElementById('file-experience_certificate')?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files?.[0];
+                        if (!file) return;
+                        setDocUploads((s) => ({ ...s, experience_certificate: { uploading: true } }));
+                        try {
+                          const token = localStorage.getItem('neonest_token');
+                          const form = new FormData();
+                          form.append('file', file);
+                          form.append('type', 'experience_certificate');
+                          const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                            method: 'POST',
+                            headers: { Authorization: token ? `Bearer ${token}` : '' },
+                            body: form,
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.url) setDocUploads((s) => ({ ...s, experience_certificate: { uploading: false, url: data.url } }));
+                          else setDocUploads((s) => ({ ...s, experience_certificate: { uploading: false, error: data?.message || 'Upload failed' } }));
+                        } catch (err: any) {
+                          setDocUploads((s) => ({ ...s, experience_certificate: { uploading: false, error: err?.message || 'Upload error' } }));
+                        }
+                      }}
+                      className="mt-2 border-2 border-dashed rounded-lg p-4 text-sm text-muted-foreground cursor-pointer hover:border-primary"
+                    >
+                      {docUploads.experience_certificate.uploading ? 'Uploading...' : (docUploads.experience_certificate.url ? 'Uploaded ✓' : 'Drag & drop here, or click to browse')}
+                    </div>
+                    <input id="file-experience_certificate" type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setDocUploads((s) => ({ ...s, experience_certificate: { uploading: true } }));
+                      try {
+                        const token = localStorage.getItem('neonest_token');
+                        const form = new FormData();
+                        form.append('file', file);
+                        form.append('type', 'experience_certificate');
+                        const res = await fetch('http://localhost:5000/api/caretaker/upload', {
+                          method: 'POST',
+                          headers: { Authorization: token ? `Bearer ${token}` : '' },
+                          body: form,
+                        });
+                        const data = await res.json();
+                        if (res.ok && data?.url) setDocUploads((s) => ({ ...s, experience_certificate: { uploading: false, url: data.url } }));
+                        else setDocUploads((s) => ({ ...s, experience_certificate: { uploading: false, error: data?.message || 'Upload failed' } }));
+                      } catch (err: any) {
+                        setDocUploads((s) => ({ ...s, experience_certificate: { uploading: false, error: err?.message || 'Upload error' } }));
+                      }
+                    }} />
                   </CardContent>
                 </Card>
               </div>
@@ -802,7 +1184,10 @@ export function CaregiverWorkflow() {
                   {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
                     <div key={day} className="text-center">
                       <div className="text-sm font-medium mb-2">{day}</div>
-                      <Checkbox id={day} />
+                      <Checkbox id={day} checked={availabilityDays[day]} onCheckedChange={(c) => {
+                        const checked = Boolean(c);
+                        setAvailabilityDays((prev) => ({ ...prev, [day]: checked }));
+                      }} />
                     </div>
                   ))}
                 </div>
@@ -811,7 +1196,7 @@ export function CaregiverWorkflow() {
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="startTime">Preferred Start Time</Label>
-                  <Select>
+                  <Select onValueChange={setStartTime}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select time" />
                     </SelectTrigger>
@@ -826,7 +1211,7 @@ export function CaregiverWorkflow() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="endTime">Preferred End Time</Label>
-                  <Select>
+                  <Select onValueChange={setEndTime}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select time" />
                     </SelectTrigger>
@@ -848,6 +1233,8 @@ export function CaregiverWorkflow() {
                   type="number" 
                   placeholder="₹ per hour"
                   className="text-lg"
+                  value={hourlyRate}
+                  onChange={(e) => setHourlyRate(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
                   Recommended range for your city: {selectedCity ? cities.find(c => c.id === selectedCity)?.avgRate : '₹200-500/hour'}
@@ -1282,6 +1669,40 @@ export function CaregiverWorkflow() {
 
       {/* Step Navigation */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Application Status Banner - Show only if already applied */}
+        {statusLoading ? (
+          <div className="max-w-3xl mx-auto mb-4 p-3 text-sm rounded border bg-muted/30 text-center">Checking application status…</div>
+        ) : applicationStatus !== 'none' ? (
+          <Card className="max-w-3xl mx-auto">
+            <CardContent className="p-8 text-center">
+              <div className={`mb-6 inline-block p-4 rounded-lg ${
+                applicationStatus === 'pending' ? 'bg-yellow-50 border-2 border-yellow-200' :
+                applicationStatus === 'approved' ? 'bg-green-50 border-2 border-green-200' :
+                'bg-red-50 border-2 border-red-200'
+              }`}>
+                {applicationStatus === 'pending' && <Clock className="w-12 h-12 mx-auto mb-3 text-yellow-600" />}
+                {applicationStatus === 'approved' && <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-600" />}
+                {applicationStatus === 'rejected' && <XCircle className="w-12 h-12 mx-auto mb-3 text-red-600" />}
+                <h2 className="text-2xl font-bold mb-2">
+                  {applicationStatus === 'pending' && 'Application Under Review'}
+                  {applicationStatus === 'approved' && 'Application Approved!'}
+                  {applicationStatus === 'rejected' && 'Application Rejected'}
+                </h2>
+                <p className="text-muted-foreground">
+                  {applicationStatus === 'pending' && 'Your application has been submitted and is currently under review. We will contact you soon.'}
+                  {applicationStatus === 'approved' && 'Congratulations! Your application has been approved. We will enable bookings for your profile shortly.'}
+                  {applicationStatus === 'rejected' && 'Your application was not approved. Our team will contact you with details.'}
+                </p>
+              </div>
+              {onNavigate && (
+                <Button onClick={() => onNavigate('home')} variant="outline">
+                  Return to Home
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <>
         <div className="flex items-center justify-center mb-8 overflow-x-auto">
           {steps.map((step, index) => {
             const IconComponent = step.icon;
@@ -1318,24 +1739,97 @@ export function CaregiverWorkflow() {
           <CardContent className="p-8">
             {renderStepContent()}
             
+            {/* Validation Error Messages */}
+            {validationErrors.length > 0 && (
+              <div className="mt-4 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2">
+                  <div className="w-4 h-4 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
+                    <span className="text-xs font-bold">!</span>
+                  </div>
+                  <span className="font-medium">Please complete the required fields:</span>
+                </div>
+                <ul className="ml-6 text-sm text-red-600 dark:text-red-400 space-y-1">
+                  {validationErrors.map((error, idx) => (
+                    <li key={idx}>• {error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
             {/* Navigation Buttons */}
             <div className="flex justify-between mt-8 pt-6 border-t border-border">
               <Button 
                 variant="outline" 
-                onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+                onClick={() => {
+                  setValidationErrors([]);
+                  setCurrentStep(Math.max(0, currentStep - 1));
+                }}
                 disabled={currentStep === 0}
               >
                 Previous
               </Button>
               
               {currentStep === steps.length - 1 ? (
-                <Button className="bg-gradient-to-r from-primary to-secondary text-white">
+                <Button
+                  className="bg-gradient-to-r from-primary to-secondary text-white"
+                  onClick={async () => {
+                    // Final validation before submission
+                    const validation = validateStep(currentStep);
+                    if (!validation.isValid) {
+                      setValidationErrors(validation.errors);
+                      return;
+                    }
+
+                    // Collect full data from selections to send to backend
+                    const days = Object.keys(availabilityDays).filter((d) => availabilityDays[d]);
+                    const documents = Object.entries(docUploads)
+                      .filter(([, { url }]) => url)
+                      .map(([type, { url }]) => ({ type, url: url! }));
+
+                    const payload: any = {
+                      selectedCity: selectedCity || undefined,
+                      availabilityDays: days,
+                      startTime: startTime || undefined,
+                      endTime: endTime || undefined,
+                      hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
+                      services: selectedServices,
+                      experienceLevel: experienceLevel || undefined,
+                      about: about || undefined,
+                      languages: languages || undefined,
+                      education: education || undefined,
+                      documents: documents,
+                      profileCompleted: true,
+                    };
+                    try {
+                      const token = localStorage.getItem('neonest_token');
+                      const res = await fetch('http://localhost:5000/api/caretaker/profile', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: token ? `Bearer ${token}` : '',
+                        },
+                        body: JSON.stringify(payload),
+                      });
+                      if (res.ok && onNavigate) onNavigate('home');
+                    } catch (e) {
+                      // no-op; keep UX smooth
+                    }
+                  }}
+                >
                   Submit Application
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               ) : (
                 <Button 
-                  onClick={() => setCurrentStep(Math.min(steps.length - 1, currentStep + 1))}
+                  onClick={() => {
+                    const validation = validateStep(currentStep);
+                    if (!validation.isValid) {
+                      setValidationErrors(validation.errors);
+                    } else {
+                      setValidationErrors([]);
+                      setCurrentStep(Math.min(steps.length - 1, currentStep + 1));
+                    }
+                  }}
                   disabled={currentStep === 0 && isZeroExperience === null}
                   className="bg-gradient-to-r from-primary to-secondary text-white"
                 >
@@ -1346,6 +1840,8 @@ export function CaregiverWorkflow() {
             </div>
           </CardContent>
         </Card>
+        </>
+        )}
       </div>
     </div>
   );

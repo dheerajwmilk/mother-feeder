@@ -107,7 +107,7 @@ function App() {
       case 'knowledge':
         return <KnowledgeHub />;
       case 'caregiver-signup':
-        return <CaregiverWorkflow />;
+        return <CaregiverWorkflow onNavigate={setCurrentView} />;
       case 'book-care':
         return (
           <AuthGuard onNavigate={setCurrentView}>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowRight, Calendar, MapPin, Heart, Clock, Star, User, Baby, Shield, Search, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -24,7 +24,8 @@ export function BookCareWorkflow() {
   const [paymentData, setPaymentData] = useState<any>(null);
   const [paymentError, setPaymentError] = useState<string>('');
   
-  const { elementRef: heroRef } = useScrollAnimation();
+  const heroHook = useScrollAnimation();
+  const heroRef = (heroHook.elementRef as unknown) as React.RefObject<HTMLElement>;
 
   // Scroll to top when step changes
   useEffect(() => {
